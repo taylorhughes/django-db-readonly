@@ -8,6 +8,7 @@ import pkg_resources
 VERSION = tuple(map(int, pkg_resources.get_distribution('django-db-readonly').version.split('.')))
 __version__ = VERSION
 
+import re
 from time import time
 
 from django.conf import settings
@@ -40,12 +41,24 @@ class ReadOnlyCursorWrapper(object):
     Raises a DatabaseWriteDenied exception if writes are disabled.
     """
 
-    SQL_WRITE_BLACKLIST = (
+    _SQL_WRITE_BLACKLIST = (
         # Data Definition
-        'CREATE', 'ALTER', 'RENAME', 'DROP', 'TRUNCATE',
+        'CREATE',
+        'ALTER',
+        'RENAME',
+        'DROP',
+        'TRUNCATE',
         # Data Manipulation
-        'INSERT INTO', 'UPDATE', 'REPLACE', 'DELETE FROM',
+        'INSERT INTO',
+        'UPDATE',
+        'REPLACE',
+        'DELETE FROM',
     )
+    SQL_WRITE_BLACKLIST_RE = re.compile(
+        # Generate a regular expression: r'^\s*(CREATE|ALTER|INSERT\s+INTO|...)\b'
+        r'^\s*(?:%s)\b' % '|'.join([re.sub(r'\s+', '\\s+', sql)
+                                    for sql in _SQL_WRITE_BLACKLIST]),
+        re.IGNORECASE)
 
     def __init__(self, cursor):
         self.cursor = cursor
@@ -70,7 +83,7 @@ class ReadOnlyCursorWrapper(object):
         return iter(self.cursor)
 
     def _write_sql(self, sql):
-        return sql.startswith(self.SQL_WRITE_BLACKLIST)
+        return bool(self.SQL_WRITE_BLACKLIST_RE.match(sql))
 
 
 class CursorWrapper(util.CursorWrapper):
